@@ -1,0 +1,8 @@
+[package]
+name = "lcd_display"
+version = "0.1.0"
+authors = ["Christian FOUCHER <christian.foucher@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+lcd_rgb_keypad = { git = "https://github.com/prisme60/LCD-RGB-Keypad-rs.git"}
