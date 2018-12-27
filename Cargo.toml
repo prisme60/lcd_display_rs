@@ -6,4 +6,5 @@ edition = "2018"
 
 [dependencies]
 lcd_rgb_keypad = { git = "https://github.com/prisme60/LCD-RGB-Keypad-rs.git"}
+sms_freemobile_api = { git = "https://github.com/prisme60/rs-sms-freemobile-api.git"}
 rustbox = "0.11"
