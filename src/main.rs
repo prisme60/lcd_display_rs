@@ -2,8 +2,22 @@ use lcd_rgb_keypad::{
     lcd::{commands, Lcd},
     leds::{set, Leds},
 };
-use rustbox::{Color, Key, RustBox};
-use std::{error::Error, thread::sleep, time::Duration};
+use sms_freemobile_api::sms_service::SmsService;
+use std::{
+    alloc::System,
+    error::Error,
+    io::{stdin, stdout, Write},
+    thread::sleep,
+    time::Duration,
+};
+use termion::{event::Key, input::TermRead, raw::IntoRawMode};
+
+pub mod menu;
+
+use crate::menu::{Item, MenuMgr};
+
+#[global_allocator]
+pub static mut THE_ALLOC: System = System;
 
 fn main() {
     println!("Enter :");
@@ -42,51 +56,92 @@ fn main() {
     l.append_raw_str(commands::BACKLIGHT_OFF);
     l.apply();
 
-    //Test KeyBoard
-    let rustbox = match RustBox::init(Default::default()) {
-        Result::Ok(v) => v,
-        Result::Err(e) => panic!("{}", e),
-    };
+    let sms = SmsService::new("Accounts.toml");
 
-    rustbox.print(
-        1,
-        1,
-        rustbox::RB_BOLD,
-        Color::White,
-        Color::Black,
-        "Hello, world!",
-    );
-    rustbox.print(
-        1,
-        3,
-        rustbox::RB_BOLD,
-        Color::White,
-        Color::Black,
-        "Push buttons on the keypad",
-    );
-    rustbox.present();
-    loop {
-        rustbox.print(
-            1,
-            6,
-            rustbox::RB_BOLD,
-            Color::Black,
-            Color::White,
-            match rustbox.poll_event(false) {
-                Ok(rustbox::Event::KeyEvent(key)) => match key {
-                    Key::Enter => "Enter",
-                    Key::Right => "->   ",
-                    Key::Left => "<-   ",
-                    Key::Up => "Up   ",
-                    Key::Down => "Down ",
-                    _ => break,
-                },
-                Err(e) => panic!("{}", e.description()),
-                _ => "     ",
-            },
-        );
-        rustbox.present();
+    let msg_to_cf = |item: &Item| {
+        match item {
+            Item::Sms(sms_service) => {
+                let _ = sms_service.sms_user("cf", "Hello\nWorld! CF from RP1");
+                "Message OK to CF"
+            } //_ => "Error"
+        }
+    };
+    let msg_to_mf = |item: &Item| {
+        match item {
+            Item::Sms(sms_service) => {
+                let _ = sms_service.sms_user("cf", "Hello\nWorld! MF from RP1");
+                "Message OK to CF"
+            } //_ => "Error"
+        }
+    };
+    let msg_to_ac = |item: &Item| {
+        match item {
+            Item::Sms(sms_service) => {
+                let _ = sms_service.sms_user("cf", "Hello\nWorld! AC from RP1");
+                "Message OK to CF"
+            } //_ => "Error"
+        }
+    };
+    let mut menu_mgr = MenuMgr::create(vec![
+        ("Message to CF", msg_to_cf),
+        ("Message to MF", msg_to_mf),
+        ("Message to AC", msg_to_ac),
+    ]);
+
+    let stdin = stdin();
+    let mut stdout = stdout().into_raw_mode().unwrap();
+
+    write!(
+        stdout,
+        "{}{}q to exit. Type stuff, use alt, and so on.{}",
+        termion::clear::All,
+        termion::cursor::Goto(1, 1),
+        termion::cursor::Hide
+    )
+    .unwrap();
+    stdout.flush().unwrap();
+
+    for c in stdin.keys() {
+        let mut res = "";
+        write!(
+            stdout,
+            "{}{}",
+            termion::cursor::Goto(1, 1),
+            termion::clear::CurrentLine
+        )
+        .unwrap();
+
+        match c.unwrap() {
+            Key::Char('q') => break,
+            Key::Char('\n') => {
+                println!("Return");
+                let item = Item::Sms(&sms);
+                res = menu_mgr.execute_item(&item);
+            }
+            Key::Char(c) => println!("{}", c),
+            Key::Alt(c) => println!("^{}", c),
+            Key::Ctrl(c) => println!("*{}", c),
+            Key::Left => println!("←"),
+            Key::Right => println!("→"),
+            Key::Up => {
+                println!("↑");
+                menu_mgr.next_item();
+            }
+            Key::Down => {
+                println!("↓");
+                menu_mgr.prev_item();
+            }
+            Key::Backspace => println!("×"),
+            _ => {}
+        }
+        stdout.flush().unwrap();
+        if menu_mgr.is_refresh_needed() {
+            l.append_raw_str(commands::goto_xy(0, 0).as_str());
+            l.append_str(menu_mgr.get_text());
+            l.apply();
+        }
     }
 
+    write!(stdout, "{}", termion::cursor::Show).unwrap();
     println!("Exit :");
 }
