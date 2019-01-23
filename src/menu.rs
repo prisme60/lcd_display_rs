@@ -4,22 +4,17 @@ pub enum Item<'a> {
     Sms(&'a SmsService),
 }
 
+type TextFn<'a> = (&'a str, fn(&Item) -> &'static str);
+
+#[derive(Default)]
 pub struct MenuMgr<'a> {
     index: usize,
     menu_need_refresh: bool,
-    menu: Vec<(&'a str, fn(&Item) -> &'static str)>,
+    menu: Vec<TextFn<'a>>,
 }
 
 impl<'a> MenuMgr<'a> {
-    pub fn new() -> Self {
-        MenuMgr {
-            index: 0,
-            menu_need_refresh: false,
-            menu: vec![],
-        }
-    }
-
-    pub fn create(menu: Vec<(&'a str, fn(&Item) -> &'static str)>) -> Self {
+    pub fn create(menu: Vec<TextFn<'a>>) -> Self {
         MenuMgr {
             index: 0,
             menu_need_refresh: false,

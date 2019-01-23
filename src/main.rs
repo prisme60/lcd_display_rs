@@ -4,8 +4,6 @@ use lcd_rgb_keypad::{
 };
 use sms_freemobile_api::sms_service::SmsService;
 use std::{
-    alloc::System,
-    error::Error,
     io::{stdin, stdout, Write},
     thread::sleep,
     time::Duration,
@@ -13,23 +11,12 @@ use std::{
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
 pub mod menu;
-
 use crate::menu::{Item, MenuMgr};
 
-#[global_allocator]
-pub static mut THE_ALLOC: System = System;
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     println!("Enter :");
-
-    // Test leds
-    set(Leds::RED);
-    sleep(Duration::from_secs(1));
-    set(Leds::GREEN);
-    sleep(Duration::from_secs(1));
-    set(Leds::BLUE);
-    sleep(Duration::from_secs(1));
-    set(Leds::empty());
 
     //Test LCD
     let mut l = Lcd::new("/dev/lcd");
@@ -37,24 +24,15 @@ fn main() {
     l.append_raw_str(commands::DISPLAY_ON);
     l.append_raw_str(commands::CURSOR_OFF);
     l.append_raw_str(commands::BACKLIGHT_ON);
-    l.append_str("Coucou Héro\ndes temps héroiques\n");
+    let version = format!("LCD DISPLAY\nv{}\n", VERSION);
+    l.append_str(version.as_str());
     l.apply();
-    sleep(Duration::from_secs(1));
 
-    l.append_raw_str(commands::BACKLIGHT_FLASH);
-    l.append_str("Au revoir mon héro\nJoyeux Noël\n");
+    leds_r_g_b_sequence();
+
+    l.append(commands::CLEAR_DISPLAY);
     l.apply();
-    sleep(Duration::from_millis(500));
-
-    for _i in 0..16 {
-        l.append_raw_str(commands::SHIFT_DISPLAY_LEFT);
-        l.apply();
-        sleep(Duration::from_millis(500));
-    }
-
-    l.append_raw_str(commands::DISPLAY_OFF);
-    l.append_raw_str(commands::BACKLIGHT_OFF);
-    l.apply();
+    sleep(Duration::from_millis(300));
 
     let sms = SmsService::new("Accounts.toml");
 
@@ -70,7 +48,7 @@ fn main() {
         match item {
             Item::Sms(sms_service) => {
                 let _ = sms_service.sms_user("cf", "Hello\nWorld! MF from RP1");
-                "Message OK to CF"
+                "Message OK to MF"
             } //_ => "Error"
         }
     };
@@ -78,7 +56,7 @@ fn main() {
         match item {
             Item::Sms(sms_service) => {
                 let _ = sms_service.sms_user("cf", "Hello\nWorld! AC from RP1");
-                "Message OK to CF"
+                "Message OK to AC"
             } //_ => "Error"
         }
     };
@@ -87,6 +65,8 @@ fn main() {
         ("Message to MF", msg_to_mf),
         ("Message to AC", msg_to_ac),
     ]);
+
+    refresh_display_text(&mut l, menu_mgr.get_text());
 
     let stdin = stdin();
     let mut stdout = stdout().into_raw_mode().unwrap();
@@ -102,7 +82,7 @@ fn main() {
     stdout.flush().unwrap();
 
     for c in stdin.keys() {
-        let mut res = "";
+        let mut _res = "";
         write!(
             stdout,
             "{}{}",
@@ -116,7 +96,7 @@ fn main() {
             Key::Char('\n') => {
                 println!("Return");
                 let item = Item::Sms(&sms);
-                res = menu_mgr.execute_item(&item);
+                _res = menu_mgr.execute_item(&item);
             }
             Key::Char(c) => println!("{}", c),
             Key::Alt(c) => println!("^{}", c),
@@ -136,12 +116,34 @@ fn main() {
         }
         stdout.flush().unwrap();
         if menu_mgr.is_refresh_needed() {
-            l.append_raw_str(commands::goto_xy(0, 0).as_str());
-            l.append_str(menu_mgr.get_text());
-            l.apply();
+            refresh_display_text(&mut l, menu_mgr.get_text());
         }
     }
 
     write!(stdout, "{}", termion::cursor::Show).unwrap();
+
+    l.append_raw_str(commands::DISPLAY_OFF);
+    l.append_raw_str(commands::BACKLIGHT_OFF);
+    l.apply();
+
     println!("Exit :");
+}
+
+fn refresh_display_text(lcd: &mut Lcd, text: &str) {
+    lcd.append(commands::BEGIN_OF_LINE);
+    lcd.append_raw_str(commands::goto_xy(0, 0).as_str());
+    lcd.append_str(text);
+    lcd.append_raw_str("\n");
+    lcd.append_raw_str(commands::KILL_END_OF_LINE);
+    lcd.apply();
+}
+
+fn leds_r_g_b_sequence() {
+    set(Leds::RED);
+    sleep(Duration::from_millis(300));
+    set(Leds::GREEN);
+    sleep(Duration::from_millis(300));
+    set(Leds::BLUE);
+    sleep(Duration::from_millis(300));
+    set(Leds::empty());
 }
