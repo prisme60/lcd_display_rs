@@ -21,9 +21,12 @@ fn main() {
     //Test LCD
     let mut l = Lcd::new("/dev/lcd");
     l.append_raw_str(commands::REINITIALISE);
+    l.apply();
     l.append_raw_str(commands::DISPLAY_ON);
-    l.append_raw_str(commands::CURSOR_OFF);
+    l.append_raw_str(commands::CURSOR_OFF); // Seems to do nothing (instead disabling cursor)
+    l.append_raw_str(commands::BLINK_OFF); // Hide the cursor (kernel bug ? instead disable blinking!)
     l.append_raw_str(commands::BACKLIGHT_ON);
+    l.apply();
     let version = format!("LCD DISPLAY\nv{}\n", VERSION);
     l.append_str(version.as_str());
     l.apply();
@@ -47,7 +50,7 @@ fn main() {
     let msg_to_mf = |item: &Item| {
         match item {
             Item::Sms(sms_service) => {
-                let _ = sms_service.sms_user("cf", "Hello\nWorld! MF from RP1");
+                let _ = sms_service.sms_user("mf", "Hello\nWorld! MF from RP1");
                 "Message OK to MF"
             } //_ => "Error"
         }
@@ -55,7 +58,7 @@ fn main() {
     let msg_to_ac = |item: &Item| {
         match item {
             Item::Sms(sms_service) => {
-                let _ = sms_service.sms_user("cf", "Hello\nWorld! AC from RP1");
+                let _ = sms_service.sms_user("ac", "Hello\nWorld! AC from RP1");
                 "Message OK to AC"
             } //_ => "Error"
         }
@@ -101,8 +104,16 @@ fn main() {
             Key::Char(c) => println!("{}", c),
             Key::Alt(c) => println!("^{}", c),
             Key::Ctrl(c) => println!("*{}", c),
-            Key::Left => println!("←"),
-            Key::Right => println!("→"),
+            Key::Left => {
+                l.append_raw_str(commands::BLINK_OFF); // Hide Cursor (kernel bug?)
+                l.apply();
+                println!("←")
+            },
+            Key::Right => {
+                l.append_raw_str(commands::BLINK_ON); // Show Cursor (kernel bug?)
+                l.apply();
+                println!("→")
+            },
             Key::Up => {
                 println!("↑");
                 menu_mgr.next_item();
@@ -133,7 +144,6 @@ fn refresh_display_text(lcd: &mut Lcd, text: &str) {
     lcd.append(commands::BEGIN_OF_LINE);
     lcd.append_raw_str(commands::goto_xy(0, 0).as_str());
     lcd.append_str(text);
-    lcd.append_raw_str("\n");
     lcd.append_raw_str(commands::KILL_END_OF_LINE);
     lcd.apply();
 }
