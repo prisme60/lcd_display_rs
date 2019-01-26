@@ -1,19 +1,23 @@
+use evdev::Device;
 use lcd_rgb_keypad::{
     lcd::{commands, Lcd},
     leds::{set, Leds},
 };
 use sms_freemobile_api::sms_service::SmsService;
-use std::{
-    io::{stdin, stdout, Write},
-    thread::sleep,
-    time::Duration,
-};
-use termion::{event::Key, input::TermRead, raw::IntoRawMode};
+use std::{thread::sleep, time::Duration};
 
 pub mod menu;
 use crate::menu::{Item, MenuMgr};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+type Key = u16;
+
+const KEY_ENTER: Key = 28;
+const KEY_UP: Key = 103;
+const KEY_DOWN: Key = 108;
+const KEY_LEFT: Key = 105;
+const KEY_RIGHT: Key = 106;
 
 fn main() {
     println!("Enter :");
@@ -43,7 +47,7 @@ fn main() {
         match item {
             Item::Sms(sms_service) => {
                 let _ = sms_service.sms_user("cf", "Hello\nWorld! CF from RP1");
-                "Message OK to CF"
+                ("Message OK to CF", false)
             } //_ => "Error"
         }
     };
@@ -51,7 +55,7 @@ fn main() {
         match item {
             Item::Sms(sms_service) => {
                 let _ = sms_service.sms_user("mf", "Hello\nWorld! MF from RP1");
-                "Message OK to MF"
+                ("Message OK to MF", false)
             } //_ => "Error"
         }
     };
@@ -59,79 +63,63 @@ fn main() {
         match item {
             Item::Sms(sms_service) => {
                 let _ = sms_service.sms_user("ac", "Hello\nWorld! AC from RP1");
-                "Message OK to AC"
+                ("Message OK to AC", false)
             } //_ => "Error"
         }
     };
+    let quit = |_item: &Item| ("Quit", true);
     let mut menu_mgr = MenuMgr::create(vec![
         ("Message to CF", msg_to_cf),
         ("Message to MF", msg_to_mf),
         ("Message to AC", msg_to_ac),
+        ("Quit", quit),
     ]);
 
     refresh_display_text(&mut l, menu_mgr.get_text());
 
-    let stdin = stdin();
-    let mut stdout = stdout().into_raw_mode().unwrap();
+    if let Ok(mut d) = select_device() {
+        println!("{}", d);
+        while !menu_mgr.is_exit_asked() {
+            for ev in d.events_no_sync().unwrap() {
+                println!("{:?}", ev);
+                if ev.value == 0 // key_up
+                {
+                    let mut _res = "";
 
-    write!(
-        stdout,
-        "{}{}q to exit. Type stuff, use alt, and so on.{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1),
-        termion::cursor::Hide
-    )
-    .unwrap();
-    stdout.flush().unwrap();
-
-    for c in stdin.keys() {
-        let mut _res = "";
-        write!(
-            stdout,
-            "{}{}",
-            termion::cursor::Goto(1, 1),
-            termion::clear::CurrentLine
-        )
-        .unwrap();
-
-        match c.unwrap() {
-            Key::Char('q') => break,
-            Key::Char('\n') => {
-                println!("Return");
-                let item = Item::Sms(&sms);
-                _res = menu_mgr.execute_item(&item);
+                    match ev.code {
+                        KEY_ENTER => {
+                            println!("Return");
+                            let item = Item::Sms(&sms);
+                            _res = menu_mgr.execute_item(&item);
+                        }
+                        KEY_LEFT => {
+                            l.append_raw_str(commands::BLINK_OFF); // Hide Cursor (kernel bug?)
+                            l.apply();
+                            println!("←")
+                        }
+                        KEY_RIGHT => {
+                            l.append_raw_str(commands::BLINK_ON); // Show Cursor (kernel bug?)
+                            l.apply();
+                            println!("→")
+                        }
+                        KEY_UP => {
+                            println!("↑");
+                            menu_mgr.next_item();
+                        }
+                        KEY_DOWN => {
+                            println!("↓");
+                            menu_mgr.prev_item();
+                        }
+                        _ => {}
+                    }
+                    if menu_mgr.is_refresh_needed() {
+                        refresh_display_text(&mut l, menu_mgr.get_text());
+                    }
+                }
             }
-            Key::Char(c) => println!("{}", c),
-            Key::Alt(c) => println!("^{}", c),
-            Key::Ctrl(c) => println!("*{}", c),
-            Key::Left => {
-                l.append_raw_str(commands::BLINK_OFF); // Hide Cursor (kernel bug?)
-                l.apply();
-                println!("←")
-            },
-            Key::Right => {
-                l.append_raw_str(commands::BLINK_ON); // Show Cursor (kernel bug?)
-                l.apply();
-                println!("→")
-            },
-            Key::Up => {
-                println!("↑");
-                menu_mgr.next_item();
-            }
-            Key::Down => {
-                println!("↓");
-                menu_mgr.prev_item();
-            }
-            Key::Backspace => println!("×"),
-            _ => {}
-        }
-        stdout.flush().unwrap();
-        if menu_mgr.is_refresh_needed() {
-            refresh_display_text(&mut l, menu_mgr.get_text());
+            sleep(Duration::from_millis(100)); // Just for the moment (later we will use something like a select!)
         }
     }
-
-    write!(stdout, "{}", termion::cursor::Show).unwrap();
 
     l.append_raw_str(commands::DISPLAY_OFF);
     l.append_raw_str(commands::BACKLIGHT_OFF);
@@ -156,4 +144,17 @@ fn leds_r_g_b_sequence() {
     set(Leds::BLUE);
     sleep(Duration::from_millis(300));
     set(Leds::empty());
+}
+
+fn select_device() -> Result<Device, String> {
+    let mut devices = evdev::enumerate();
+    for (i, d) in devices.iter().enumerate() {
+        println!("{:?}", d.name());
+        if let Ok(name) = d.name().to_str() {
+            if name.eq("keypad") {
+                return Ok(devices.swap_remove(i));
+            }
+        }
+    }
+    Err("No keypad device detected".to_string())
 }
